@@ -30,7 +30,7 @@ func main() {
 
 	print(heap.String())
 
-	// Створення графа
+	// Створення графу
 	g := Graph{}
 
 	g.AddEdge(0, 1, 0)

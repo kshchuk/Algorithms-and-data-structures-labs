@@ -1,0 +1,192 @@
+package main
+
+import (
+	"math"
+)
+
+// Edge представляє зважене ребро у графі
+type Edge struct {
+	src, dest int     //з'єднані ребром вершини
+	weight    float64 // вага ребра
+}
+
+// Функціонал Graph
+type GraphInterface interface {
+	AddEdge(src, dest int, weight float64) // додає нове зважене ребро до графу
+	// виявляє цикли з від'ємною вагою і повертає найкоротші шляхи від початкової вершини до всіх інших вершин графа
+	BellmanFord(src int) ([]float64, []int, bool)
+	Dijkstra(src int, pq HeapInterface) ([]float64, []int) // повертає найкоротші шляхи від початкової вершини до всіх інших вершин
+	Johnson() [][]float64                                  // обчислює найкоротші шляхи між усіма парами вершин у графі
+}
+
+// Graph являє собою зважений граф з використанням списку суміжності
+type Graph struct {
+	edges    []Edge // список ребер
+	vertices []int  // список вершин
+}
+
+// AddEdge додає нове зважене ребро до графу
+func (g *Graph) AddEdge(src, dest int, weight float64) {
+	edge := Edge{src, dest, weight}
+	g.edges = append(g.edges, edge)
+
+	var found bool = false
+	for i := 0; i < len(g.vertices); i++ {
+		if g.vertices[i] == src {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		g.vertices = append(g.vertices, src)
+	}
+
+	found = false
+	for i := 0; i < len(g.vertices); i++ {
+		if g.vertices[i] == dest {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		g.vertices = append(g.vertices, dest)
+	}
+}
+
+// BellmanFord виявляє цикли з від'ємною вагою і повертає найкоротші шляхи
+// від початкової вершини до всіх інших вершин графа
+func (g *Graph) BellmanFord(src int) ([]float64, []int, bool) {
+	n := len(g.vertices)
+	dist := make([]float64, n)
+	prev := make([]int, n)
+
+	// Ініціалізувати масив відстаней (dist) нескінченністю, а масив prev -1
+	for i := 0; i < n; i++ {
+		dist[i] = math.MaxInt32
+		prev[i] = -1
+	}
+
+	// Встановити відстань від вершини-джерела до себе рівною 0
+	dist[src] = 0
+
+	// Розслабити ребра n-1 разів
+	for i := 1; i < n; i++ {
+		for _, edge := range g.edges {
+			u, v, w := edge.src, edge.dest, edge.weight
+			if dist[u]+w < dist[v] {
+				dist[v] = dist[u] + w
+				prev[v] = u
+			}
+		}
+	}
+
+	// Перевірте наявність від'ємних вагових циклів, розслабивши ребра ще раз
+	for _, edge := range g.edges {
+		u, v, w := edge.src, edge.dest, edge.weight
+		if dist[u]+w < dist[v] {
+			return nil, nil, false
+		}
+	}
+
+	return dist, prev, true
+}
+
+// Dijkstra повертає найкоротші шляхи від початкової вершини до всіх інших вершин
+// у графі за алгоритмом Дейкстри
+func (g *Graph) Dijkstra(src int, pq HeapInterface) ([]float64, []int) {
+	n := len(g.vertices)
+	dist := make([]float64, n)
+	prev := make([]int, n)
+	visited := make([]bool, n)
+
+	// Ініціалізувати масив відстаней нескінченністю, а попередній масив -1
+	for i := 0; i < n; i++ {
+		dist[i] = math.Inf(1)
+		prev[i] = -1
+	}
+
+	// Встановити відстань від вершини-джерела до себе рівною 0
+	dist[src] = 0
+
+	// Вставити вершину-джерело у чергу пріоритетів
+	pq.Insert(src, float64(dist[src]))
+
+	for pq.Num() > 0 {
+		// Витягнути вершину з мінімальною відстанню з черги пріоритетів
+		u, _ := pq.ExtractMin()
+
+		if visited[u.(int)] {
+			continue
+		}
+
+		visited[u.(int)] = true
+
+		// Розслабити ребра
+		for _, edge := range g.edges {
+			if edge.src == u.(int) {
+				v := edge.dest
+				w := edge.weight
+				if dist[u.(int)]+w < dist[v] {
+					dist[v] = dist[u.(int)] + w
+					prev[v] = u.(int)
+					pq.Insert(v, float64(dist[v]))
+				}
+			}
+		}
+	}
+
+	return dist, prev
+}
+
+// Johnson обчислює найкоротші шляхи між усіма парами вершин у графі
+// за допомогою алгоритму Джонсона
+func (g *Graph) Johnson() [][]float64 {
+	n := len(g.vertices)
+
+	// Додати до графа нову вершину s та ребра з вагою 0 з s у всі інші вершини
+	for i := 0; i < n; i++ {
+		g.AddEdge(n, i, 0)
+	}
+
+	// Запустити алгоритм Беллмана-Форда, щоб отримати функцію потенціалу для кожної вершини
+	potential, _, hasNegativeCycle := g.BellmanFord(n)
+
+	// Якщо у графі є цикл з від'ємною вагою, повернути nil
+	if !hasNegativeCycle {
+		return nil
+	}
+
+	// Видалити додану вершину та ребра
+	for i := 0; i < n; i++ {
+		g.edges = g.edges[:len(g.edges)-1]
+	}
+	g.vertices = g.vertices[:len(g.vertices)-1]
+
+	// Створити новий граф з ребрами вагою w(u,v) + h(u) - h(v)
+	newGraph := &Graph{vertices: g.vertices}
+	for _, edge := range g.edges {
+		u, v, w := edge.src, edge.dest, edge.weight
+		newW := w + potential[u] - potential[v]
+		newGraph.AddEdge(u, v, newW)
+	}
+
+	// Ініціалізувати 2D-зріз для зберігання найкоротших шляхів між усіма парами вершин
+	paths := make([][]float64, n)
+	for i := 0; i < n; i++ {
+		paths[i] = make([]float64, n)
+	}
+
+	// Запустити алгоритм Дейкстри з кожної вершини, щоб отримати найкоротші шляхи до всіх інших вершин
+	for i := 0; i < n; i++ {
+		dist, _ := newGraph.Dijkstra(i, NewFibHeap())
+
+		// Відредагуймо відстані за допомогою функції потенціалу, щоб отримати фактичні відстані
+		for j := 0; j < n; j++ {
+			paths[i][j] = dist[j] - potential[i] + potential[j]
+		}
+	}
+
+	return paths
+}
